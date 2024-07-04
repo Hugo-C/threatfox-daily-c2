@@ -1,7 +1,13 @@
-import httpx
+import json
+# We can't use requests/httpx, we have to rely on JS to do HTTP requests
+# See https://github.com/cloudflare/workers-sdk/issues/5608
+# See https://pyodide.org/en/stable/usage/api/python-api/http.html#pyodide.http.pyfetch
+from pyodide.http import pyfetch
 
 THREAT_FOX_API = "https://threatfox-api.abuse.ch/api/v1/"
 JARM_ONLINE_API = "https://jarm.online/api/v1/jarm"
+
+MAX_IOC_TO_COMPUTE = 100
 
 C2_THREAT_TYPE = "botnet_cc"
 IP_PORT_FORMAT = "ip:port"
@@ -38,10 +44,6 @@ class IocsAcknowledged:
 class ThreatFoxJarmer:
     def __init__(self):
         self.acknowledged = IocsAcknowledged()
-        self.client = httpx.AsyncClient()
-
-    async def shutdown(self):
-        await self.client.aclose()  # Please call me
 
     async def compute_jarms_of_last_day_c2(self) -> int:
         """Fetch C2 of the last day on Threatfox and compute their jarm hash using jarm.online.
@@ -49,15 +51,20 @@ class ThreatFoxJarmer:
         Returns the number of processed iocs"""
         payload = {
             "query": "get_iocs",
-            "days": 2,
+            "days": 1,
         }
-        threatfox_response = await self.client.post(THREAT_FOX_API, json=payload)
-        threatfox_json_response = threatfox_response.json()
+
+        threatfox_response = await pyfetch(
+            THREAT_FOX_API,
+            method="POST",
+            body=json.dumps(payload),
+        )
+        threatfox_json_response = await threatfox_response.json()
         for ioc in threatfox_json_response["data"]:
             if ioc.get("threat_type") != C2_THREAT_TYPE:
                 continue
             await self.compute_jarm_of(ioc)
-            if len(self.acknowledged) == 10:
+            if len(self.acknowledged) == MAX_IOC_TO_COMPUTE:
                 break
         return len(self.acknowledged)
 
@@ -73,8 +80,9 @@ class ThreatFoxJarmer:
                 return  # We already saw this ioc
 
             self.acknowledged.add(params)
-            jarm_response = await self.client.get(JARM_ONLINE_API, params=params)
-            json_jarm_response = jarm_response.json()
+            url = f"{JARM_ONLINE_API}/?" + '&'.join([f"{k}={v}" for k, v in params.items()])
+            jarm_response = await pyfetch(url)
+            json_jarm_response = await jarm_response.json()
             print(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
         except Exception as e:
             print(e)
