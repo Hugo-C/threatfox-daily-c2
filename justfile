@@ -5,4 +5,9 @@ deploy:
   npx wrangler@latest deploy
 
 lint:
+  ruff check --no-fix
+  ruff format --check --diff
+
+lint-fix:
   ruff check
+  ruff format

@@ -3,10 +3,24 @@ main = "src/entry.py"
 compatibility_flags = ["python_workers"]
 compatibility_date = "2024-07-06"
 
+kv_namespaces = [
+    { binding = "threatfoxiocs", id = "0efb46385b434026acc60d812549e16f" }
+]
+
 vars = { MAX_IOC_TO_COMPUTE = "10" }
 
-[env.dev.vars]
-MAX_IOC_TO_COMPUTE = "1"
+[triggers]
+crons = ["53 * * * *"]  # Every hour at minute 53
+
+[placement]
+mode = "smart"
+
+[env.dev]
+kv_namespaces = [
+    { binding = "threatfoxiocs", id = "0efb46385b434026acc60d812549e16f" }
+]
+vars = { MAX_IOC_TO_COMPUTE = "1" }
+
 
 [dev]
 port = 37959
