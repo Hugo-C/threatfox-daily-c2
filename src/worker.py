@@ -85,9 +85,9 @@ class ThreatFoxJarmer:
         )
         threatfox_json_response = await threatfox_response.json()
         raw_first_seen_processed = None
-        for ioc in threatfox_json_response["data"]:
-            # TODO order by first_seen ?
-            # TODO We might also skip 2 iocs having the exact same timestamp
+        # Latest iocs are returned first, so we start by the end
+        for ioc in reversed(threatfox_json_response["data"]):
+            # TODO We might skip 2 iocs having the exact same timestamp
             if ioc.get("threat_type") != C2_THREAT_TYPE:
                 continue
             raw_first_seen = ioc.get("first_seen")
@@ -95,8 +95,11 @@ class ThreatFoxJarmer:
             if first_seen <= self.ioc_first_seen_processed_up_to:
                 logging.debug(f"Skipping ioc {ioc['ioc']} as already processed ({raw_first_seen})")
                 continue
-            await self.compute_jarm_of(ioc)
-            raw_first_seen_processed = raw_first_seen
+            try:
+                await self.compute_jarm_of(ioc)
+                raw_first_seen_processed = raw_first_seen
+            except Exception as e:
+                logging.exception(e)
             if len(self.acknowledged) == self.max_ioc_to_compute:
                 break
         if raw_first_seen_processed:
@@ -106,20 +109,20 @@ class ThreatFoxJarmer:
         return len(self.acknowledged)
 
     async def compute_jarm_of(self, ioc_details: dict):
-        try:
-            ioc_value: str = ioc_details["ioc"]
-            if ioc_details.get("ioc_type") == IP_PORT_FORMAT:
-                host, port = ioc_value.split(":", maxsplit=1)
-                params = {"host": host, "port": port}
-            else:
-                params = {"host": ioc_value}
-            if params in self.acknowledged:
-                return  # We already saw this ioc
+        ioc_value: str = ioc_details["ioc"]
+        if ioc_details.get("ioc_type") == IP_PORT_FORMAT:
+            host, port = ioc_value.split(":", maxsplit=1)
+            params = {"host": host, "port": port}
+        else:
+            params = {"host": ioc_value}
+        if params in self.acknowledged:
+            return  # We already saw this ioc
 
-            self.acknowledged.add(params)
-            url = f"{JARM_ONLINE_API}/?" + "&".join([f"{k}={v}" for k, v in params.items()])
-            jarm_response = await pyfetch(url)
-            json_jarm_response = await jarm_response.json()
+        self.acknowledged.add(params)
+        url = f"{JARM_ONLINE_API}/?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        jarm_response = await pyfetch(url)
+        json_jarm_response = await jarm_response.json()
+        if json_jarm_response.get("error"):
+            logging.debug(f"JARM scan failed for {ioc_value}")
+        else:
             logging.info(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
-        except Exception as e:
-            logging.exception(e)
