@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 10
-    needs: ruff
     steps:
       - uses: actions/checkout@v4
       - name: Build & Deploy Worker
