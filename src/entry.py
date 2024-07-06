@@ -1,10 +1,20 @@
 import time
 
-from js import Response
+from js import Response, console
 from worker import ThreatFoxJarmer
 
 
-async def on_fetch(request, env):
+async def on_fetch(request, env, ctx):
+    console.log("Triggered by request")
+    return await run(env)
+
+
+async def scheduled(event, env, ctx):
+    console.log("Triggered by Cron")
+    return await run(env)
+
+
+async def run(env):
     start = time.time()
     kv_cache = env.threatfoxiocs
     max_ioc_to_compute = int(env.MAX_IOC_TO_COMPUTE)
