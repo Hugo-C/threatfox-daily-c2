@@ -1,4 +1,12 @@
 name = "threatfox-daily-c2"
 main = "src/entry.py"
 compatibility_flags = ["python_workers"]
-compatibility_date = "2024-05-25"
+compatibility_date = "2024-07-06"
+
+vars = { MAX_IOC_TO_COMPUTE = "10" }
+
+[env.dev.vars]
+MAX_IOC_TO_COMPUTE = "1"
+
+[dev]
+port = 37959

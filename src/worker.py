@@ -7,8 +7,6 @@ from pyodide.http import pyfetch
 THREAT_FOX_API = "https://threatfox-api.abuse.ch/api/v1/"
 JARM_ONLINE_API = "https://jarm.online/api/v1/jarm"
 
-MAX_IOC_TO_COMPUTE = 100
-
 C2_THREAT_TYPE = "botnet_cc"
 IP_PORT_FORMAT = "ip:port"
 
@@ -42,8 +40,9 @@ class IocsAcknowledged:
 
 
 class ThreatFoxJarmer:
-    def __init__(self):
+    def __init__(self, max_ioc_to_compute: int):
         self.acknowledged = IocsAcknowledged()
+        self.max_ioc_to_compute = max_ioc_to_compute
 
     async def compute_jarms_of_last_day_c2(self) -> int:
         """Fetch C2 of the last day on Threatfox and compute their jarm hash using jarm.online.
@@ -64,7 +63,7 @@ class ThreatFoxJarmer:
             if ioc.get("threat_type") != C2_THREAT_TYPE:
                 continue
             await self.compute_jarm_of(ioc)
-            if len(self.acknowledged) == MAX_IOC_TO_COMPUTE:
+            if len(self.acknowledged) == self.max_ioc_to_compute:
                 break
         return len(self.acknowledged)
 
@@ -86,12 +85,3 @@ class ThreatFoxJarmer:
             print(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
         except Exception as e:
             print(e)
-
-
-if __name__ == '__main__':
-    import asyncio
-
-    jarmer = ThreatFoxJarmer()
-    processed = asyncio.run(jarmer.compute_jarms_of_last_day_c2())
-    asyncio.run(jarmer.shutdown())
-    print(processed)
