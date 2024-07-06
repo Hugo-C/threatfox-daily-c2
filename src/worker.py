@@ -1,7 +1,7 @@
-from datetime import datetime
 import json
-from typing import Self
 import logging
+from datetime import datetime
+from typing import Self
 
 # We can't use requests/httpx, we have to rely on JS to do HTTP requests
 # See https://github.com/cloudflare/workers-sdk/issues/5608

@@ -9,5 +9,5 @@ lint:
   ruff format --check --diff
 
 lint-fix:
-  ruff check
+  ruff check --fix
   ruff format
