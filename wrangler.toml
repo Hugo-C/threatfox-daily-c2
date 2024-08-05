@@ -9,8 +9,9 @@ kv_namespaces = [
 
 vars = { MAX_IOC_TO_COMPUTE = "10" }
 
-[triggers]
-crons = ["53 * * * *"]  # Every hour at minute 53
+# Cron does not appear to be supported on Python yet
+#[triggers]
+#crons = ["53 * * * *"]  # Every hour at minute 53
 
 [placement]
 mode = "smart"
