@@ -1,6 +1,7 @@
 import time
 
 from js import Response, console
+
 from worker import ThreatFoxJarmer
 
 
