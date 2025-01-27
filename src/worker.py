@@ -1,7 +1,9 @@
 import json
 import logging
-from datetime import datetime
+import math
+from datetime import UTC, datetime
 from typing import Self
+from urllib.parse import urljoin
 
 # We can't use requests/httpx, we have to rely on JS to do HTTP requests
 # See https://github.com/cloudflare/workers-sdk/issues/5608
@@ -9,7 +11,10 @@ from typing import Self
 from pyodide.http import pyfetch
 
 THREAT_FOX_API = "https://threatfox-api.abuse.ch/api/v1/"
-JARM_ONLINE_API = "https://jarm.online/api/v1/jarm"
+JARM_ONLINE_BASE_API = "https://jarm.online/api/v1/"
+JARM_ONLINE_API = urljoin(JARM_ONLINE_BASE_API, "jarm")
+TRANCO_OVERLAP_API = urljoin(JARM_ONLINE_BASE_API, "tranco-overlap")
+IOC_CONFIRMED_API = urljoin(JARM_ONLINE_BASE_API, "confirmed-ioc-scans")
 
 C2_THREAT_TYPE = "botnet_cc"
 IP_PORT_FORMAT = "ip:port"
@@ -50,16 +55,17 @@ class IocsAcknowledged:
 
 
 class ThreatFoxJarmer:
-    def __init__(self, kv_cache, max_ioc_to_compute: int):
+    def __init__(self, kv_cache, max_ioc_to_compute: int, ioc_confirmed_auth_header: str):
         """Should not be called directly, use create instead"""
         self.acknowledged = IocsAcknowledged()
         self.kv_cache = kv_cache
         self.max_ioc_to_compute = max_ioc_to_compute
+        self.ioc_confirmed_auth_header = ioc_confirmed_auth_header
         self.ioc_first_seen_processed_up_to = None  # to be filled async by create
 
     @classmethod
-    async def create(cls, kv_cache, max_ioc_to_compute: int) -> Self:
-        self = cls(kv_cache, max_ioc_to_compute)
+    async def create(cls, kv_cache, max_ioc_to_compute: int, ioc_confirmed_auth_header: str) -> Self:
+        self = cls(kv_cache, max_ioc_to_compute, ioc_confirmed_auth_header)
         first_seen_processed = await self.kv_cache.get(KV_CACHE_KEY)
         if first_seen_processed:
             logging.info(f"Retrieved {first_seen_processed} as last 'first_seen' processed")
@@ -96,7 +102,16 @@ class ThreatFoxJarmer:
                 logging.debug(f"Skipping ioc {ioc['ioc']} as already processed ({raw_first_seen})")
                 continue
             try:
-                await self.compute_jarm_of(ioc)
+                json_jarm_response = await self.compute_jarm_of(ioc)
+                scan_time = datetime.now(UTC)
+                if json_jarm_response.get("error"):
+                    logging.warning(f"JARM scan failed for {ioc['ioc']}")
+                    continue
+                else:
+                    logging.info(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
+                jarm_hash = json_jarm_response.get("jarm_hash")
+                if not await self.does_overlap_with_tranco(jarm_hash):
+                    await self.submit_ioc_as_confirmed(ioc, json_jarm_response, scan_time)
                 raw_first_seen_processed = raw_first_seen
             except Exception as e:
                 logging.exception(e)
@@ -108,7 +123,7 @@ class ThreatFoxJarmer:
             await self.kv_cache.put(KV_CACHE_KEY, raw_first_seen_processed)
         return len(self.acknowledged)
 
-    async def compute_jarm_of(self, ioc_details: dict):
+    async def compute_jarm_of(self, ioc_details: dict) -> dict:
         ioc_value: str = ioc_details["ioc"]
         if ioc_details.get("ioc_type") == IP_PORT_FORMAT:
             host, port = ioc_value.split(":", maxsplit=1)
@@ -121,8 +136,31 @@ class ThreatFoxJarmer:
         self.acknowledged.add(params)
         url = f"{JARM_ONLINE_API}/?" + "&".join([f"{k}={v}" for k, v in params.items()])
         jarm_response = await pyfetch(url)
-        json_jarm_response = await jarm_response.json()
-        if json_jarm_response.get("error"):
-            logging.debug(f"JARM scan failed for {ioc_value}")
-        else:
-            logging.info(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
+        return await jarm_response.json()
+
+    @staticmethod
+    async def does_overlap_with_tranco(jarm_hash: str) -> bool:
+        params = {"jarm_hash": jarm_hash}
+        url = f"{TRANCO_OVERLAP_API}/?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        tranco_response = await pyfetch(url)
+        json_tranco_response = await tranco_response.json()
+        return len(json_tranco_response["overlapping_domains"]) > 0
+
+    async def submit_ioc_as_confirmed(self, threatfox_ioc: dict, jarm_online_response: dict, scan_time: datetime):
+        threatfox_first_seen = datetime.strptime(threatfox_ioc["first_seen"], THREATFOX_DATETIME_FORMAT)
+        payload = {
+            "host": jarm_online_response["host"],
+            "port": jarm_online_response["port"],
+            "jarm_hash": jarm_online_response["jarm_hash"],
+            "scan_timestamp": math.ceil(scan_time.timestamp()),
+            "threat_fox_first_seen": math.ceil(threatfox_first_seen.timestamp()),
+            "threat_fox_confidence_level": threatfox_ioc["confidence_level"],
+            "threat_fox_malware": threatfox_ioc["malware"],
+        }
+
+        await pyfetch(
+            IOC_CONFIRMED_API,
+            method="POST",
+            body=json.dumps(payload),
+            headers={"Authorization": f"Token {self.ioc_confirmed_auth_header}"},
+        )
