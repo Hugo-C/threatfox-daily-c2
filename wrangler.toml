@@ -1,7 +1,7 @@
 name = "threatfox-daily-c2"
 main = "src/entry.py"
 compatibility_flags = ["python_workers"]
-compatibility_date = "2025-01-19"
+compatibility_date = "2025-07-08"
 
 kv_namespaces = [
     { binding = "threatfoxiocs", id = "0efb46385b434026acc60d812549e16f" }

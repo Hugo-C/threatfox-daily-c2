@@ -55,17 +55,24 @@ class IocsAcknowledged:
 
 
 class ThreatFoxJarmer:
-    def __init__(self, kv_cache, max_ioc_to_compute: int, ioc_confirmed_auth_header: str):
+    def __init__(self, kv_cache, max_ioc_to_compute: int, ioc_confirmed_auth_header: str, threat_fox_api_auth_key: str):
         """Should not be called directly, use create instead"""
         self.acknowledged = IocsAcknowledged()
         self.kv_cache = kv_cache
         self.max_ioc_to_compute = max_ioc_to_compute
         self.ioc_confirmed_auth_header = ioc_confirmed_auth_header
+        self.threat_fox_api_auth_key = threat_fox_api_auth_key
         self.ioc_first_seen_processed_up_to = None  # to be filled async by create
 
     @classmethod
-    async def create(cls, kv_cache, max_ioc_to_compute: int, ioc_confirmed_auth_header: str) -> Self:
-        self = cls(kv_cache, max_ioc_to_compute, ioc_confirmed_auth_header)
+    async def create(
+        cls,
+        kv_cache,
+        max_ioc_to_compute: int,
+        ioc_confirmed_auth_header: str,
+        threat_fox_api_auth_key: str,
+    ) -> Self:
+        self = cls(kv_cache, max_ioc_to_compute, ioc_confirmed_auth_header, threat_fox_api_auth_key)
         first_seen_processed = await self.kv_cache.get(KV_CACHE_KEY)
         if first_seen_processed:
             logging.info(f"Retrieved {first_seen_processed} as last 'first_seen' processed")
@@ -88,6 +95,7 @@ class ThreatFoxJarmer:
             THREAT_FOX_API,
             method="POST",
             body=json.dumps(payload),
+            headers={"Auth-Key": self.threat_fox_api_auth_key},
         )
         threatfox_json_response = await threatfox_response.json()
         raw_first_seen_processed = None
