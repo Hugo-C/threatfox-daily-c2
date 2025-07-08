@@ -75,10 +75,10 @@ class ThreatFoxJarmer:
         self = cls(kv_cache, max_ioc_to_compute, ioc_confirmed_auth_header, threat_fox_api_auth_key)
         first_seen_processed = await self.kv_cache.get(KV_CACHE_KEY)
         if first_seen_processed:
-            logging.info(f"Retrieved {first_seen_processed} as last 'first_seen' processed")
+            logger.info(f"Retrieved {first_seen_processed} as last 'first_seen' processed")
             self.ioc_first_seen_processed_up_to = datetime.strptime(first_seen_processed, THREATFOX_DATETIME_FORMAT)
         else:  # key is not in cache
-            logging.info("No last 'first_seen' found in KV cache")
+            logger.info("No last 'first_seen' found in KV cache")
             self.ioc_first_seen_processed_up_to = datetime(1970, 1, 1)
         return self
 
@@ -107,27 +107,27 @@ class ThreatFoxJarmer:
             raw_first_seen = ioc.get("first_seen")
             first_seen = datetime.strptime(raw_first_seen, THREATFOX_DATETIME_FORMAT)
             if first_seen <= self.ioc_first_seen_processed_up_to:
-                logging.debug(f"Skipping ioc {ioc['ioc']} as already processed ({raw_first_seen})")
+                logger.debug(f"Skipping ioc {ioc['ioc']} as already processed ({raw_first_seen})")
                 continue
             try:
                 json_jarm_response = await self.compute_jarm_of(ioc)
                 scan_time = datetime.now(UTC)
                 if json_jarm_response.get("error"):
-                    logging.warning(f"JARM scan failed for {ioc['ioc']}")
+                    logger.warning(f"JARM scan failed for {ioc['ioc']}")
                     continue
                 else:
-                    logging.info(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
+                    logger.info(f"{json_jarm_response.get('host')} - {json_jarm_response.get('jarm_hash')}")
                 jarm_hash = json_jarm_response.get("jarm_hash")
                 if not await self.does_overlap_with_tranco(jarm_hash):
                     await self.submit_ioc_as_confirmed(ioc, json_jarm_response, scan_time)
                 raw_first_seen_processed = raw_first_seen
             except Exception as e:
-                logging.exception(e)
+                logger.exception(e)
             if len(self.acknowledged) == self.max_ioc_to_compute:
                 break
         if raw_first_seen_processed:
             # save that we have already processed iocs up to this date
-            logging.info(f"Saving {raw_first_seen_processed} as last 'first_seen' processed")
+            logger.info(f"Saving {raw_first_seen_processed} as last 'first_seen' processed")
             await self.kv_cache.put(KV_CACHE_KEY, raw_first_seen_processed)
         return len(self.acknowledged)
 
